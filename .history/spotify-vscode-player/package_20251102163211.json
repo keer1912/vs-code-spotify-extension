@@ -1,0 +1,81 @@
+{
+  "name": "spotify-vscode-player",
+  "displayName": "Spotify Player",
+  "description": "Control Spotify from VS Code Explorer",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "spotify-sidebar",
+          "title": "Spotify",
+          "icon": "$(music)"
+        }
+      ]
+    },
+    "views": {
+      "spotify-sidebar": [
+        {
+          "type": "webview",
+          "id": "spotifyPlayer",
+          "name": "Now Playing"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "spotify.authenticate",
+        "title": "Spotify: Authenticate"
+      },
+      {
+        "command": "spotify.play",
+        "title": "Spotify: Play"
+      },
+      {
+        "command": "spotify.pause",
+        "title": "Spotify: Pause"
+      },
+      {
+        "command": "spotify.next",
+        "title": "Spotify: Next Track"
+      },
+      {
+        "command": "spotify.previous",
+        "title": "Spotify: Previous Track"
+      }
+    ],
+    "configuration": {
+      "title": "Spotify Player",
+      "properties": {
+        "spotify.clientId": {
+          "type": "string",
+          "default": "",
+          "description": "Spotify Client ID"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "^18.x",
+    "@typescript-eslint/eslint-plugin": "^5.x",
+    "@typescript-eslint/parser": "^5.x",
+    "eslint": "^8.x",
+    "typescript": "^5.x"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
