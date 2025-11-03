@@ -13,3 +13,12 @@ export interface SpotifyTokens {
   refreshToken: string;
   expiresAt: number;
 }
+
+export interface SpotifyPlaylist {
+  id: string;
+  name: string;
+  description: string;
+  imageUrl: string;
+  trackCount: number;
+  owner: string;
+}

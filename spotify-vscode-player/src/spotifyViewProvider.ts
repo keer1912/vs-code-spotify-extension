@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import { SpotifyService } from './spotifyService';
-import { SpotifyTrack } from './types';
+import { SpotifyTrack, SpotifyPlaylist } from './types';
 
 export class SpotifyViewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private updateInterval?: NodeJS.Timeout;
+  private currentView: 'player' | 'playlists' = 'player';
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -40,12 +41,38 @@ export class SpotifyViewProvider implements vscode.WebviewViewProvider {
         case 'previous':
           await this.spotifyService.previous();
           break;
+        case 'showPlaylists':
+          this.currentView = 'playlists';
+          await this.showPlaylists();
+          break;
+        case 'backToPlayer':
+          this.currentView = 'player';
+          webviewView.webview.html = this.getHtmlContent(webviewView.webview);
+          this.updateTrackInfo();
+          break;
+        case 'playPlaylist':
+          await this.spotifyService.playPlaylist(message.playlistUri);
+          this.currentView = 'player';
+          webviewView.webview.html = this.getHtmlContent(webviewView.webview);
+          setTimeout(() => this.updateTrackInfo(), 1000);
+          break;
       }
     });
 
     // Update track info every 2 seconds
-    this.updateInterval = setInterval(() => this.updateTrackInfo(), 2000);
+    this.updateInterval = setInterval(() => {
+      if (this.currentView === 'player') {
+        this.updateTrackInfo();
+      }
+    }, 2000);
     this.updateTrackInfo();
+  }
+
+  private async showPlaylists() {
+    if (!this.view) return;
+
+    const playlists = await this.spotifyService.getUserPlaylists();
+    this.view.webview.html = this.getPlaylistsHtml(playlists);
   }
 
   private async updateTrackInfo() {
@@ -97,6 +124,24 @@ export class SpotifyViewProvider implements vscode.WebviewViewProvider {
             flex-direction: column;
             gap: 15px;
             align-items: center;
+        }
+        .top-bar {
+            width: 100%;
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 10px;
+        }
+        .playlists-btn {
+            background: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .playlists-btn:hover {
+            background: var(--vscode-button-secondaryHoverBackground);
         }
         .album-art {
             width: 200px;
@@ -152,6 +197,9 @@ export class SpotifyViewProvider implements vscode.WebviewViewProvider {
     </div>
     
     <div id="player" class="container hidden">
+        <div class="top-bar">
+            <button class="playlists-btn" id="playlistsBtn">📋 Playlists</button>
+        </div>
         <img id="albumArt" class="album-art" src="" alt="Album Art">
         <div class="track-info">
             <div id="trackName" class="track-name">No track playing</div>
@@ -216,6 +264,129 @@ export class SpotifyViewProvider implements vscode.WebviewViewProvider {
         document.getElementById('prevBtn').addEventListener('click', () => {
             vscode.postMessage({ command: 'previous' });
         });
+
+        document.getElementById('playlistsBtn').addEventListener('click', () => {
+            vscode.postMessage({ command: 'showPlaylists' });
+        });
+    </script>
+</body>
+</html>`;
+  }
+
+  private getPlaylistsHtml(playlists: SpotifyPlaylist[]): string {
+    const playlistItems = playlists.map(playlist => `
+      <div class="playlist-item" onclick="playPlaylist('${playlist.id}')">
+        <img src="${playlist.imageUrl || 'https://via.placeholder.com/60'}" class="playlist-img" alt="${playlist.name}">
+        <div class="playlist-info">
+          <div class="playlist-name">${playlist.name}</div>
+          <div class="playlist-meta">${playlist.trackCount} songs</div>
+        </div>
+      </div>
+    `).join('');
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Playlists</title>
+    <style>
+        body {
+            padding: 10px;
+            font-family: var(--vscode-font-family);
+            color: var(--vscode-foreground);
+            background-color: var(--vscode-editor-background);
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            gap: 10px;
+        }
+        .back-btn {
+            background: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .back-btn:hover {
+            background: var(--vscode-button-secondaryHoverBackground);
+        }
+        h2 {
+            margin: 0;
+            font-size: 18px;
+            flex: 1;
+        }
+        .playlists-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .playlist-item {
+            display: flex;
+            gap: 12px;
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .playlist-item:hover {
+            background-color: var(--vscode-list-hoverBackground);
+        }
+        .playlist-img {
+            width: 60px;
+            height: 60px;
+            border-radius: 4px;
+            object-fit: cover;
+        }
+        .playlist-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .playlist-name {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        .playlist-meta {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+        .empty-message {
+            text-align: center;
+            padding: 40px 20px;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <button class="back-btn" id="backBtn">← Back</button>
+        <h2>Your Playlists</h2>
+    </div>
+    
+    <div class="playlists-container">
+        ${playlists.length > 0 ? playlistItems : '<div class="empty-message">No playlists found</div>'}
+    </div>
+
+    <script>
+        const vscode = acquireVsCodeApi();
+
+        document.getElementById('backBtn').addEventListener('click', () => {
+            vscode.postMessage({ command: 'backToPlayer' });
+        });
+
+        function playPlaylist(playlistId) {
+            vscode.postMessage({ 
+                command: 'playPlaylist', 
+                playlistUri: 'spotify:playlist:' + playlistId 
+            });
+        }
     </script>
 </body>
 </html>`;

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import axios from 'axios';
-import { SpotifyTrack, SpotifyTokens } from './types';
+import { SpotifyTrack, SpotifyTokens, SpotifyPlaylist } from './types';
 import { AuthServer } from './authServer';
 
 export class SpotifyService {
@@ -287,6 +287,53 @@ export class SpotifyService {
       }, 500);
     } catch (error: any) {
       await this.handleApiError(error, 'go to previous track');
+    }
+  }
+
+  async getUserPlaylists(): Promise<SpotifyPlaylist[]> {
+    const token = await this.getValidToken();
+    if (!token) {
+      vscode.window.showWarningMessage('Please authenticate with Spotify first');
+      return [];
+    }
+
+    try {
+      const response = await axios.get(
+        `${SpotifyService.SPOTIFY_API_BASE}/me/playlists?limit=50`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+
+      return response.data.items.map((playlist: any) => ({
+        id: playlist.id,
+        name: playlist.name,
+        description: playlist.description || '',
+        imageUrl: playlist.images[0]?.url || '',
+        trackCount: playlist.tracks.total,
+        owner: playlist.owner.display_name
+      }));
+    } catch (error: any) {
+      console.error('Error fetching playlists:', error);
+      await this.handleApiError(error, 'fetch playlists');
+      return [];
+    }
+  }
+
+  async playPlaylist(playlistUri: string): Promise<void> {
+    const token = await this.getValidToken();
+    if (!token) {
+      vscode.window.showWarningMessage('Please authenticate with Spotify first');
+      return;
+    }
+
+    try {
+      await axios.put(
+        `${SpotifyService.SPOTIFY_API_BASE}/me/player/play`,
+        { context_uri: playlistUri },
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      vscode.window.showInformationMessage('🎵 Playing playlist...');
+    } catch (error: any) {
+      await this.handleApiError(error, 'play playlist');
     }
   }
 
