@@ -3,375 +3,190 @@ import { SpotifyService } from './spotifyService';
 import { SpotifyTrack, SpotifyPlaylist } from './types';
 
 export class SpotifyViewProvider implements vscode.WebviewViewProvider {
-  private view?: vscode.WebviewView;
-  private updateInterval?: NodeJS.Timeout;
-  private currentView: 'player' | 'playlists' = 'player';
+    private view?: vscode.WebviewView;
+    private updateInterval?: NodeJS.Timeout;
+    private currentView: 'player' | 'playlists' = 'player';
 
-  constructor(
-    private readonly extensionUri: vscode.Uri,
-    private spotifyService: SpotifyService
-  ) {}
+    constructor(
+        private readonly extensionUri: vscode.Uri,
+        private spotifyService: SpotifyService
+    ) { }
 
-  resolveWebviewView(
-    webviewView: vscode.WebviewView,
-    context: vscode.WebviewViewResolveContext,
-    token: vscode.CancellationToken
-  ): void | Thenable<void> {
-    this.view = webviewView;
+    resolveWebviewView(
+        webviewView: vscode.WebviewView,
+        context: vscode.WebviewViewResolveContext,
+        token: vscode.CancellationToken
+    ): void | Thenable<void> {
+        this.view = webviewView;
 
-    webviewView.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [this.extensionUri]
-    };
+        webviewView.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [this.extensionUri]
+        };
 
-    webviewView.webview.html = this.getHtmlContent(webviewView.webview);
+        webviewView.webview.html = this.getHtmlContent(webviewView.webview);
 
-    // Handle messages from webview
-    webviewView.webview.onDidReceiveMessage(async (message) => {
-      switch (message.command) {
-        case 'play':
-          await this.spotifyService.play();
-          break;
-        case 'pause':
-          await this.spotifyService.pause();
-          break;
-        case 'next':
-          await this.spotifyService.next();
-          break;
-        case 'previous':
-          await this.spotifyService.previous();
-          break;
-        case 'showPlaylists':
-          this.currentView = 'playlists';
-          await this.showPlaylists();
-          break;
-        case 'backToPlayer':
-          this.currentView = 'player';
-          webviewView.webview.html = this.getHtmlContent(webviewView.webview);
-          this.updateTrackInfo();
-          break;
-        case 'playPlaylist':
-          await this.spotifyService.playPlaylist(message.playlistUri);
-          this.currentView = 'player';
-          webviewView.webview.html = this.getHtmlContent(webviewView.webview);
-          setTimeout(() => this.updateTrackInfo(), 1000);
-          break;
-      }
-    });
+        // Handle messages from webview
+        webviewView.webview.onDidReceiveMessage(async (message) => {
+            switch (message.command) {
+                case 'play':
+                    await this.spotifyService.play();
+                    break;
+                case 'pause':
+                    await this.spotifyService.pause();
+                    break;
+                case 'next':
+                    await this.spotifyService.next();
+                    break;
+                case 'previous':
+                    await this.spotifyService.previous();
+                    break;
+                case 'authenticate':
+                    await this.spotifyService.authenticate();
+                    this.updateTrackInfo();
+                    break;
+                case 'showPlaylists':
+                    this.currentView = 'playlists';
+                    await this.showPlaylists();
+                    break;
+                case 'backToPlayer':
+                    this.currentView = 'player';
+                    webviewView.webview.html = this.getHtmlContent(webviewView.webview);
+                    this.updateTrackInfo();
+                    break;
+                case 'playPlaylist':
+                    await this.spotifyService.playPlaylist(message.playlistUri);
+                    this.currentView = 'player';
+                    webviewView.webview.html = this.getHtmlContent(webviewView.webview);
+                    setTimeout(() => this.updateTrackInfo(), 1000);
+                    break;
+            }
+        });
 
-    // Update track info every 2 seconds
-    this.updateInterval = setInterval(() => {
-      if (this.currentView === 'player') {
+        // Update track info every 2 seconds
+        this.updateInterval = setInterval(() => {
+            if (this.currentView === 'player') {
+                this.updateTrackInfo();
+            }
+        }, 2000);
         this.updateTrackInfo();
-      }
-    }, 2000);
-    this.updateTrackInfo();
-  }
+    }
 
-  private async showPlaylists() {
-    if (!this.view) return;
+    private async showPlaylists() {
+        if (!this.view) return;
 
-    const playlists = await this.spotifyService.getUserPlaylists();
-    this.view.webview.html = this.getPlaylistsHtml(playlists);
-  }
+        const playlists = await this.spotifyService.getUserPlaylists();
+        this.view.webview.html = this.getPlaylistsHtml(playlists);
+    }
 
-  private async updateTrackInfo() {
-  if (!this.view) {
-    console.log('No view available');
-    return;
-  }
+    private async updateTrackInfo() {
+        if (!this.view) {
+            console.log('No view available');
+            return;
+        }
 
-  console.log('Checking authentication...');
-  if (!this.spotifyService.isAuthenticated()) {
-    console.log('Not authenticated');
-    this.view.webview.postMessage({ 
-      command: 'updateAuth', 
-      authenticated: false 
-    });
-    return;
-  }
+        console.log('Checking authentication...');
+        if (!this.spotifyService.isAuthenticated()) {
+            console.log('Not authenticated');
+            this.view.webview.postMessage({
+                command: 'updateAuth',
+                authenticated: false
+            });
+            return;
+        }
 
-  console.log('Authenticated! Fetching track...');
-  try {
-    const track = await this.spotifyService.getCurrentTrack();
-    console.log('Track data:', track);
-    
-    this.view.webview.postMessage({ 
-      command: 'updateTrack', 
-      track 
-    });
-  } catch (error) {
-    console.error('Error fetching track:', error);
-  }
-}
-
-  private getHtmlContent(webview: vscode.Webview): string {
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Spotify Player</title>
-    <style>
-        body {
-            padding: 10px;
-            font-family: var(--vscode-font-family);
-            color: var(--vscode-foreground);
-            background-color: var(--vscode-editor-background);
-        }
-        .container {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            align-items: center;
-        }
-        .top-bar {
-            width: 100%;
-            display: flex;
-            justify-content: flex-end;
-            margin-bottom: 10px;
-        }
-        .playlists-btn {
-            background: var(--vscode-button-secondaryBackground);
-            color: var(--vscode-button-secondaryForeground);
-            border: none;
-            padding: 8px 16px;
-            cursor: pointer;
-            border-radius: 4px;
-            font-size: 13px;
-        }
-        .playlists-btn:hover {
-            background: var(--vscode-button-secondaryHoverBackground);
-        }
-        .album-art {
-            width: 200px;
-            height: 200px;
-            border-radius: 8px;
-            object-fit: cover;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        }
-        .track-info {
-            text-align: center;
-            width: 100%;
-        }
-        .track-name {
-            font-size: 16px;
-            font-weight: bold;
-            margin: 5px 0;
-        }
-        .track-artist {
-            font-size: 14px;
-            opacity: 0.8;
-        }
-        .controls {
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-            margin-top: 10px;
-        }
-        button {
-            background: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: none;
-            padding: 10px 20px;
-            cursor: pointer;
-            border-radius: 4px;
-            font-size: 20px;
-        }
-        button:hover {
-            background: var(--vscode-button-hoverBackground);
-        }
-        .auth-message {
-            text-align: center;
-            padding: 20px;
-        }
-        .hidden {
-            display: none;
-        }
-    </style>
-</head>
-<body>
-    <div id="authRequired" class="auth-message">
-        <p>Please authenticate with Spotify</p>
-        <p>Run: <code>Spotify: Authenticate</code> from Command Palette</p>
-    </div>
-    
-    <div id="player" class="container hidden">
-        <div class="top-bar">
-            <button class="playlists-btn" id="playlistsBtn">📋 Playlists</button>
-        </div>
-        <img id="albumArt" class="album-art" src="" alt="Album Art">
-        <div class="track-info">
-            <div id="trackName" class="track-name">No track playing</div>
-            <div id="trackArtist" class="track-artist"></div>
-        </div>
-        <div class="controls">
-            <button id="prevBtn" title="Previous">⏮️</button>
-            <button id="playPauseBtn" title="Play/Pause">▶️</button>
-            <button id="nextBtn" title="Next">⏭️</button>
-        </div>
-    </div>
-
-    <script>
-        const vscode = acquireVsCodeApi();
-        const authRequired = document.getElementById('authRequired');
-        const player = document.getElementById('player');
-        const albumArt = document.getElementById('albumArt');
-        const trackName = document.getElementById('trackName');
-        const trackArtist = document.getElementById('trackArtist');
-        const playPauseBtn = document.getElementById('playPauseBtn');
-
-        let isPlaying = false;
-
-        window.addEventListener('message', event => {
-            const message = event.data;
-            
-            if (message.command === 'updateAuth') {
-                if (message.authenticated) {
-                    authRequired.classList.add('hidden');
-                    player.classList.remove('hidden');
-                } else {
-                    authRequired.classList.remove('hidden');
-                    player.classList.add('hidden');
-                }
-            }
-            
-            if (message.command === 'updateTrack') {
-                const track = message.track;
-                if (track) {
-                    albumArt.src = track.albumArt;
-                    trackName.textContent = track.name;
-                    trackArtist.textContent = track.artist;
-                    isPlaying = track.isPlaying;
-                    playPauseBtn.textContent = isPlaying ? '⏸️' : '▶️';
-                    authRequired.classList.add('hidden');
-                    player.classList.remove('hidden');
-                } else {
-                    trackName.textContent = 'No track playing';
-                    trackArtist.textContent = '';
-                }
-            }
+        console.log('Authenticated! Fetching track...');
+        
+        // Send auth success first to show the player
+        this.view.webview.postMessage({
+            command: 'updateAuth',
+            authenticated: true
         });
+        
+        try {
+            const track = await this.spotifyService.getCurrentTrack();
+            console.log('Track data:', track);
 
-        document.getElementById('playPauseBtn').addEventListener('click', () => {
-            vscode.postMessage({ command: isPlaying ? 'pause' : 'play' });
-        });
+            this.view.webview.postMessage({
+                command: 'updateTrack',
+                track
+            });
+        } catch (error) {
+            console.error('Error fetching track:', error);
+        }
+    }
 
-        document.getElementById('nextBtn').addEventListener('click', () => {
-            vscode.postMessage({ command: 'next' });
-        });
+    private getHtmlContent(webview: vscode.Webview): string {
+        const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'main.css'));
+        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'main.js'));
+        const htmlPath = vscode.Uri.joinPath(this.extensionUri, 'media', 'index.html');
 
-        document.getElementById('prevBtn').addEventListener('click', () => {
-            vscode.postMessage({ command: 'previous' });
-        });
+        let htmlContent = '';
+        try {
+            // Read html file content synchronously
+            const fs = require('fs');
+            htmlContent = fs.readFileSync(htmlPath.fsPath, 'utf8');
+        } catch (err) {
+            console.error('Error reading HTML file:', err);
+            return 'Error loading player';
+        }
 
-        document.getElementById('playlistsBtn').addEventListener('click', () => {
-            vscode.postMessage({ command: 'showPlaylists' });
-        });
-    </script>
-</body>
-</html>`;
-  }
+        // Replace placeholders
+        htmlContent = htmlContent
+            .replace('{{styleUri}}', styleUri.toString())
+            .replace('{{scriptUri}}', scriptUri.toString());
 
-  private getPlaylistsHtml(playlists: SpotifyPlaylist[]): string {
-    const playlistItems = playlists.map(playlist => `
-      <div class="playlist-item" onclick="playPlaylist('${playlist.id}')">
-        <img src="${playlist.imageUrl || 'https://via.placeholder.com/60'}" class="playlist-img" alt="${playlist.name}">
-        <div class="playlist-info">
-          <div class="playlist-name">${playlist.name}</div>
-          <div class="playlist-meta">${playlist.trackCount} songs</div>
+        return htmlContent;
+    }
+
+    private getPlaylistsHtml(playlists: SpotifyPlaylist[]): string {
+        const playlistItems = playlists.map(playlist => `
+      <div class="flex gap-3 p-2 rounded-lg cursor-pointer transition-all duration-200 bg-white/5 hover:bg-white/10 hover:translate-x-1" onclick="playPlaylist('${playlist.id}')">
+        <img src="${playlist.imageUrl || 'https://via.placeholder.com/56/1a1a1a/1DB954?text=Music'}" class="w-14 h-14 rounded-md object-cover shadow-lg" alt="${playlist.name}">
+        <div class="flex-1 flex flex-col justify-center min-w-0">
+          <div class="text-sm font-semibold mb-1 truncate">${playlist.name}</div>
+          <div class="text-xs opacity-60">${playlist.trackCount} songs</div>
         </div>
       </div>
     `).join('');
 
-    return `<!DOCTYPE html>
+        const styleUri = this.view?.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'main.css'));
+
+        return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Playlists</title>
-    <style>
-        body {
-            padding: 10px;
-            font-family: var(--vscode-font-family);
-            color: var(--vscode-foreground);
-            background-color: var(--vscode-editor-background);
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        spotify: {
+                            green: '#1DB954',
+                        }
+                    }
+                }
+            }
         }
-        .header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 15px;
-            gap: 10px;
-        }
-        .back-btn {
-            background: var(--vscode-button-secondaryBackground);
-            color: var(--vscode-button-secondaryForeground);
-            border: none;
-            padding: 8px 16px;
-            cursor: pointer;
-            border-radius: 4px;
-            font-size: 13px;
-        }
-        .back-btn:hover {
-            background: var(--vscode-button-secondaryHoverBackground);
-        }
-        h2 {
-            margin: 0;
-            font-size: 18px;
-            flex: 1;
-        }
-        .playlists-container {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .playlist-item {
-            display: flex;
-            gap: 12px;
-            padding: 10px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        .playlist-item:hover {
-            background-color: var(--vscode-list-hoverBackground);
-        }
-        .playlist-img {
-            width: 60px;
-            height: 60px;
-            border-radius: 4px;
-            object-fit: cover;
-        }
-        .playlist-info {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
-        .playlist-name {
-            font-size: 14px;
-            font-weight: bold;
-            margin-bottom: 4px;
-        }
-        .playlist-meta {
-            font-size: 12px;
-            opacity: 0.7;
-        }
-        .empty-message {
-            text-align: center;
-            padding: 40px 20px;
-            opacity: 0.7;
-        }
-    </style>
+    </script>
+    <link href="${styleUri}" rel="stylesheet">
 </head>
-<body>
-    <div class="header">
-        <button class="back-btn" id="backBtn">← Back</button>
-        <h2>Your Playlists</h2>
+<body class="font-sans bg-gradient-to-b from-[var(--vscode-editor-background)] to-[#0d0d0d] text-[var(--vscode-foreground)] m-0 p-3 min-h-screen">
+    <div class="flex items-center gap-3 mb-4">
+        <button class="bg-white/10 border-none py-2 px-4 rounded-full cursor-pointer text-white text-[13px] transition-all duration-200 flex items-center gap-1.5 hover:bg-white/20" id="backBtn">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+            Back
+        </button>
+        <h2 class="text-base font-semibold flex-1">Your Playlists</h2>
     </div>
     
-    <div class="playlists-container">
-        ${playlists.length > 0 ? playlistItems : '<div class="empty-message">No playlists found</div>'}
+    <div class="flex flex-col gap-2 pb-4">
+        ${playlists.length > 0 ? playlistItems : '<div class="text-center py-10 opacity-50">No playlists found</div>'}
     </div>
 
     <script>
@@ -390,11 +205,11 @@ export class SpotifyViewProvider implements vscode.WebviewViewProvider {
     </script>
 </body>
 </html>`;
-  }
-
-  dispose() {
-    if (this.updateInterval) {
-      clearInterval(this.updateInterval);
     }
-  }
+
+    dispose() {
+        if (this.updateInterval) {
+            clearInterval(this.updateInterval);
+        }
+    }
 }

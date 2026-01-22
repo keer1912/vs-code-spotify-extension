@@ -1,0 +1,31 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "npm: watch (spotify-vscode-player)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"watch",
+				"--workspace",
+				"spotify-vscode-player"
+			],
+			"isBackground": true,
+			"problemMatcher": [
+				"$tsc-watch"
+			],
+			"group": "build"
+		},
+		{
+			"label": "npm: watch (spotify-vscode-player)",
+			"type": "shell",
+			"command": "cd spotify-vscode-player && npm run watch",
+			"isBackground": true,
+			"problemMatcher": [
+				"$tsc-watch"
+			],
+			"group": "build"
+		}
+	]
+}

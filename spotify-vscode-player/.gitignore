@@ -1,5 +1,15 @@
 out
 dist
 node_modules
-.vscode-test/
+.vscode-test
 *.vsix
+.DS_Store
+coverage
+.nyc_output
+.vscode-test/
+.history
+.venv
+__pycache__
+*.pyc
+.env
+.env.local

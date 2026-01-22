@@ -1,0 +1,48 @@
+/* Complex gradients for vinyl record grooves */
+.vinyl-record {
+    background:
+        radial-gradient(circle at center, transparent 28%, #1a1a1a 28%, #1a1a1a 29%, transparent 29%),
+        radial-gradient(circle at center, transparent 32%, #222 32%, #222 33%, transparent 33%),
+        radial-gradient(circle at center, transparent 46%, #1a1a1a 46%, #1a1a1a 47%, transparent 47%),
+        radial-gradient(circle at center, transparent 52%, #222 52%, #222 53%, transparent 53%),
+        radial-gradient(circle at center, transparent 66%, #1a1a1a 66%, #1a1a1a 67%, transparent 67%),
+        radial-gradient(circle at center, transparent 72%, #222 72%, #222 73%, transparent 73%),
+        #1a1a1a;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.vinyl-record.spinning {
+    animation: spin 3s linear infinite;
+}
+
+.vinyl-record.paused {
+    animation-play-state: paused;
+}
+
+@keyframes pulse-glow {
+    0%, 100% {
+        box-shadow: 0 0 20px var(--glow-color, rgba(29, 185, 84, 0.3)), 0 0 40px var(--glow-color-dim, rgba(29, 185, 84, 0.1));
+    }
+    50% {
+        box-shadow: 0 0 30px var(--glow-color-bright, rgba(29, 185, 84, 0.5)), 0 0 60px var(--glow-color, rgba(29, 185, 84, 0.2));
+    }
+}
+
+/* Dynamic Glow Animation Class */
+.vinyl-glow.active {
+    opacity: 1;
+    animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Helper to ensure hidden overrides flex/block */
+.hidden {
+    display: none !important;
+}

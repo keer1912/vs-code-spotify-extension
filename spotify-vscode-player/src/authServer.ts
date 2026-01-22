@@ -9,94 +9,96 @@ export class AuthServer {
   private readonly port = 8888;
   private codeVerifier: string = '';
 
-async authenticate(clientId: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number } | null> {
-  return new Promise((resolve) => {
-    // Generate PKCE codes
-    this.codeVerifier = generateCodeVerifier();
-    const codeChallenge = generateCodeChallenge(this.codeVerifier);
+  async authenticate(clientId: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number } | null> {
+    return new Promise((resolve) => {
+      // Generate PKCE codes
+      this.codeVerifier = generateCodeVerifier();
+      const codeChallenge = generateCodeChallenge(this.codeVerifier);
 
-    const scopes = [
-      'user-read-playback-state',
-      'user-modify-playback-state',
-      'user-read-currently-playing'
-    ].join(' ');
+      const scopes = [
+        'user-read-playback-state',
+        'user-modify-playback-state',
+        'user-read-currently-playing',
+        'playlist-read-private',
+        'playlist-read-collaborative'
+      ].join(' ');
 
-    const redirectUri = `http://127.0.0.1:${this.port}/callback`;  // ✅ Changed to 127.0.0.1
-    const state = this.generateRandomString(16);
+      const redirectUri = `http://127.0.0.1:${this.port}/callback`;
+      const state = this.generateRandomString(16);
 
-    const authUrl = `https://accounts.spotify.com/authorize?` +
-      `client_id=${clientId}` +
-      `&response_type=code` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&code_challenge_method=S256` +
-      `&code_challenge=${codeChallenge}` +
-      `&state=${state}` +
-      `&scope=${encodeURIComponent(scopes)}` +
-      `&show_dialog=true`;
+      const authUrl = `https://accounts.spotify.com/authorize?` +
+        `client_id=${clientId}` +
+        `&response_type=code` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&code_challenge_method=S256` +
+        `&code_challenge=${codeChallenge}` +
+        `&state=${state}` +
+        `&scope=${encodeURIComponent(scopes)}` +
+        `&show_dialog=true`;
 
-    // Create HTTP server to catch callback
-    this.server = http.createServer(async (req, res) => {
-      const parsedUrl = url.parse(req.url || '', true);
-      
-      if (parsedUrl.pathname === '/callback') {
-        const code = parsedUrl.query.code as string;
-        const returnedState = parsedUrl.query.state as string;
-        const error = parsedUrl.query.error as string;
+      // Create HTTP server to catch callback
+      this.server = http.createServer(async (req, res) => {
+        const parsedUrl = url.parse(req.url || '', true);
 
-        if (error) {
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end(this.getErrorHtml(error));
-          this.server?.close();
-          resolve(null);
-          return;
-        }
+        if (parsedUrl.pathname === '/callback') {
+          const code = parsedUrl.query.code as string;
+          const returnedState = parsedUrl.query.state as string;
+          const error = parsedUrl.query.error as string;
 
-        if (returnedState !== state) {
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end(this.getErrorHtml('State mismatch'));
-          this.server?.close();
-          resolve(null);
-          return;
-        }
-
-        if (code) {
-          try {
-            // Exchange code for token
-            const tokenResponse = await this.exchangeCodeForToken(clientId, code, redirectUri);
-            
+          if (error) {
             res.writeHead(200, { 'Content-Type': 'text/html' });
-            res.end(this.getSuccessHtml());
-            
-            this.server?.close();
-            resolve(tokenResponse);
-          } catch (error) {
-            console.error('Error exchanging code for token:', error);
-            res.writeHead(200, { 'Content-Type': 'text/html' });
-            res.end(this.getErrorHtml('Failed to get access token'));
+            res.end(this.getErrorHtml(error));
             this.server?.close();
             resolve(null);
+            return;
+          }
+
+          if (returnedState !== state) {
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(this.getErrorHtml('State mismatch'));
+            this.server?.close();
+            resolve(null);
+            return;
+          }
+
+          if (code) {
+            try {
+              // Exchange code for token
+              const tokenResponse = await this.exchangeCodeForToken(clientId, code, redirectUri);
+
+              res.writeHead(200, { 'Content-Type': 'text/html' });
+              res.end(this.getSuccessHtml());
+
+              this.server?.close();
+              resolve(tokenResponse);
+            } catch (error) {
+              console.error('Error exchanging code for token:', error);
+              res.writeHead(200, { 'Content-Type': 'text/html' });
+              res.end(this.getErrorHtml('Failed to get access token'));
+              this.server?.close();
+              resolve(null);
+            }
           }
         }
-      }
-    });
+      });
 
-    this.server.listen(this.port, '127.0.0.1', () => {  // ✅ Bind to 127.0.0.1
-      console.log(`Auth server listening on http://127.0.0.1:${this.port}`);
-      vscode.env.openExternal(vscode.Uri.parse(authUrl));
-    });
+      this.server.listen(this.port, '127.0.0.1', () => {
+        console.log(`Auth server listening on http://127.0.0.1:${this.port}`);
+        vscode.env.openExternal(vscode.Uri.parse(authUrl));
+      });
 
-    // Timeout after 5 minutes
-    setTimeout(() => {
-      if (this.server) {
-        this.server.close();
-        resolve(null);
-      }
-    }, 300000);
-  });
-}
+      // Timeout after 5 minutes
+      setTimeout(() => {
+        if (this.server) {
+          this.server.close();
+          resolve(null);
+        }
+      }, 300000);
+    });
+  }
 
   private async exchangeCodeForToken(clientId: string, code: string, redirectUri: string) {
-    const response = await axios.post('https://accounts.spotify.com/api/token', 
+    const response = await axios.post('https://accounts.spotify.com/api/token',
       new URLSearchParams({
         client_id: clientId,
         grant_type: 'authorization_code',
@@ -157,7 +159,7 @@ async authenticate(clientId: string): Promise<{ accessToken: string; refreshToke
       </head>
       <body>
         <div class="container">
-          <div class="success">✓</div>
+          <div class="success">Success</div>
           <h1>Authentication Successful!</h1>
           <p>You can close this window and return to VS Code.</p>
         </div>
@@ -195,7 +197,7 @@ async authenticate(clientId: string): Promise<{ accessToken: string; refreshToke
       </head>
       <body>
         <div class="container">
-          <div class="error">✗</div>
+          <div class="error">Error</div>
           <h1>Authentication Failed</h1>
           <p>Error: ${error}</p>
           <p>Please try again in VS Code.</p>

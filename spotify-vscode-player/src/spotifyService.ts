@@ -6,21 +6,17 @@ import { AuthServer } from './authServer';
 export class SpotifyService {
   private static readonly SPOTIFY_API_BASE = 'https://api.spotify.com/v1';
   private static readonly TOKEN_URL = 'https://accounts.spotify.com/api/token';
-  
+  private static readonly CLIENT_ID = '3a0a1cc0ad994ad1ba5cf091571e79c2';
+
   private tokens: SpotifyTokens | null = null;
-  private clientId: string;
   private authServer: AuthServer | null = null;
 
   constructor(private context: vscode.ExtensionContext) {
-    this.clientId = this.getClientId();
     this.loadTokens();
   }
 
-  private getClientId(): string {
-    const config = vscode.workspace.getConfiguration('spotify');
-    const clientId = config.get<string>('clientId', '');
-    console.log('Client ID from settings:', clientId);
-    return clientId;
+  private get clientId(): string {
+    return SpotifyService.CLIENT_ID;
   }
 
   private async loadTokens() {
@@ -47,27 +43,23 @@ export class SpotifyService {
   }
 
   async authenticate(): Promise<boolean> {
-    // Refresh client ID in case it was just set
-    this.clientId = this.getClientId();
-    
-    if (!this.clientId) {
-      vscode.window.showErrorMessage('Please set Spotify Client ID in settings');
-      await vscode.commands.executeCommand('workbench.action.openSettings', 'spotify.clientId');
+    if (!this.clientId || this.clientId === 'YOUR_SPOTIFY_CLIENT_ID_HERE') {
+      vscode.window.showErrorMessage('Extension not configured: Client ID not set by developer');
       return false;
     }
 
     try {
       vscode.window.showInformationMessage('Opening Spotify authorization in browser...');
-      
+
       this.authServer = new AuthServer();
       const result = await this.authServer.authenticate(this.clientId);
-      
+
       if (!result) {
         vscode.window.showErrorMessage('Authentication cancelled or failed');
         return false;
       }
 
-      console.log('✅ Got tokens from Spotify!');
+      console.log('Got tokens from Spotify!');
       console.log('Access token length:', result.accessToken.length);
       console.log('Has refresh token:', !!result.refreshToken);
 
@@ -77,14 +69,17 @@ export class SpotifyService {
         expiresAt: Date.now() + (result.expiresIn * 1000)
       });
 
-      vscode.window.showInformationMessage('✅ Successfully authenticated with Spotify!');
+      vscode.window.showInformationMessage('Successfully authenticated with Spotify!');
+
+      // Open Spotify app
+      await vscode.env.openExternal(vscode.Uri.parse('spotify:'));
 
       // Test immediately
       const track = await this.getCurrentTrack();
       if (track) {
-        vscode.window.showInformationMessage(`🎵 Now playing: ${track.name} by ${track.artist}`);
+        vscode.window.showInformationMessage(`Now playing: ${track.name} by ${track.artist}`);
       } else {
-        vscode.window.showInformationMessage('✅ Connected! Start playing music on Spotify to see it here.');
+        vscode.window.showInformationMessage('Connected! Start playing music on Spotify to see it here.');
       }
 
       return true;
@@ -100,7 +95,7 @@ export class SpotifyService {
 
   async refreshAccessToken(): Promise<boolean> {
     const tokens = await this.context.globalState.get<SpotifyTokens>('spotifyTokens');
-    
+
     if (!tokens?.refreshToken) {
       console.error('No refresh token available');
       return false;
@@ -108,12 +103,13 @@ export class SpotifyService {
 
     try {
       console.log('Refreshing access token...');
-      
+
       const response = await axios.post(SpotifyService.TOKEN_URL,
         new URLSearchParams({
           grant_type: 'refresh_token',
           refresh_token: tokens.refreshToken,
-          client_id: this.clientId
+          client_id: this.clientId,
+          code_verifier: '' // Not needed for refresh generally, but check spec if fails
         }).toString(),
         {
           headers: {
@@ -124,20 +120,20 @@ export class SpotifyService {
 
       await this.saveTokens({
         accessToken: response.data.access_token,
-        refreshToken: response.data.refresh_token || tokens.refreshToken, // Use new refresh token if provided, otherwise keep old one
+        refreshToken: response.data.refresh_token || tokens.refreshToken,
         expiresAt: Date.now() + (response.data.expires_in * 1000)
       });
 
-      console.log('✅ Token refreshed successfully');
+      console.log('Token refreshed successfully');
       vscode.window.showInformationMessage('Spotify token refreshed successfully');
       return true;
     } catch (error: any) {
       console.error('Error refreshing token:', error.response?.data || error.message);
-      
+
       // If refresh fails, clear tokens and ask user to re-authenticate
       this.tokens = null;
       await this.context.globalState.update('spotifyTokens', null);
-      
+
       const choice = await vscode.window.showWarningMessage(
         'Failed to refresh Spotify token. Please authenticate again.',
         'Authenticate'
@@ -145,7 +141,7 @@ export class SpotifyService {
       if (choice === 'Authenticate') {
         await this.authenticate();
       }
-      
+
       return false;
     }
   }
@@ -226,9 +222,42 @@ export class SpotifyService {
     }
 
     try {
-      await axios.put(`${SpotifyService.SPOTIFY_API_BASE}/me/player/play`, {}, {
+      // First try to get available devices
+      const devicesResponse = await axios.get(`${SpotifyService.SPOTIFY_API_BASE}/me/player/devices`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      
+      const devices = devicesResponse.data.devices;
+      
+      if (devices.length === 0) {
+        // No devices available, prompt to open Spotify
+        const choice = await vscode.window.showWarningMessage(
+          'No Spotify devices found. Open Spotify and try again.',
+          'Open Spotify'
+        );
+        if (choice === 'Open Spotify') {
+          await vscode.env.openExternal(vscode.Uri.parse('spotify:'));
+        }
+        return;
+      }
+
+      // Always prefer the local computer device
+      let targetDevice = devices.find((d: any) => d.type === 'Computer')
+        || devices.find((d: any) => d.is_active)
+        || devices[0];
+
+      // Transfer playback to activate the device if needed
+      if (!targetDevice.is_active) {
+        await axios.put(`${SpotifyService.SPOTIFY_API_BASE}/me/player`, 
+          { device_ids: [targetDevice.id], play: true },
+          { headers: { 'Authorization': `Bearer ${token}` } }
+        );
+      } else {
+        // Device is active, just resume
+        await axios.put(`${SpotifyService.SPOTIFY_API_BASE}/me/player/play`, {}, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      }
     } catch (error: any) {
       await this.handleApiError(error, 'play');
     }
@@ -331,7 +360,7 @@ export class SpotifyService {
         { context_uri: playlistUri },
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
-      vscode.window.showInformationMessage('🎵 Playing playlist...');
+      vscode.window.showInformationMessage('Playing playlist...');
     } catch (error: any) {
       await this.handleApiError(error, 'play playlist');
     }
@@ -345,7 +374,13 @@ export class SpotifyService {
         vscode.window.showErrorMessage('Spotify token expired. Please authenticate again.');
       }
     } else if (error.response?.status === 404) {
-      vscode.window.showWarningMessage('No active Spotify device found. Please open Spotify and start playing something.');
+      const choice = await vscode.window.showWarningMessage(
+        'No active Spotify device found.',
+        'Open Spotify'
+      );
+      if (choice === 'Open Spotify') {
+        await vscode.env.openExternal(vscode.Uri.parse('spotify:'));
+      }
     } else if (error.response?.status === 403) {
       vscode.window.showWarningMessage('This action is not allowed. Make sure Spotify Premium is active.');
     } else {

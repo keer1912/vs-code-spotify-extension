@@ -56,13 +56,7 @@
     ],
     "configuration": {
       "title": "Spotify Player",
-      "properties": {
-        "spotify.clientId": {
-          "type": "string",
-          "default": "",
-          "description": "Spotify Client ID"
-        }
-      }
+      "properties": {}
     }
   },
   "scripts": {
