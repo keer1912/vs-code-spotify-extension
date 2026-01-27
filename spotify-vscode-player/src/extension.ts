@@ -22,6 +22,13 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('spotify.clearCache', async () => {
+      await spotifyService.clearTokens();
+      vscode.window.showInformationMessage('Spotify cache cleared. Please authenticate again.');
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('spotify.play', () => spotifyService.play())
   );
 

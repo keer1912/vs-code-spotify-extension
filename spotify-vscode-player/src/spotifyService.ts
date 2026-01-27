@@ -241,22 +241,27 @@ export class SpotifyService {
         return;
       }
 
-      // Always prefer the local computer device
-      let targetDevice = devices.find((d: any) => d.type === 'Computer')
-        || devices.find((d: any) => d.is_active)
-        || devices[0];
-
-      // Transfer playback to activate the device if needed
-      if (!targetDevice.is_active) {
+      // Prioritize the local computer device
+      const computerDevice = devices.find((d: any) => d.type === 'Computer');
+      
+      if (computerDevice) {
+        // Transfer playback to the computer device
         await axios.put(`${SpotifyService.SPOTIFY_API_BASE}/me/player`, 
-          { device_ids: [targetDevice.id], play: true },
+          { device_ids: [computerDevice.id], play: true },
           { headers: { 'Authorization': `Bearer ${token}` } }
         );
       } else {
-        // Device is active, just resume
-        await axios.put(`${SpotifyService.SPOTIFY_API_BASE}/me/player/play`, {}, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        // No computer device found, check if there's an active device to resume
+        const activeDevice = devices.find((d: any) => d.is_active);
+        if (activeDevice) {
+          // Resume on the active device
+          await axios.put(`${SpotifyService.SPOTIFY_API_BASE}/me/player/play`, {}, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+        } else {
+          // No active device, open Spotify
+          await vscode.env.openExternal(vscode.Uri.parse('spotify:'));
+        }
       }
     } catch (error: any) {
       await this.handleApiError(error, 'play');
@@ -307,6 +312,20 @@ export class SpotifyService {
     }
 
     try {
+      // First check if there are any active devices
+      const devicesResponse = await axios.get(`${SpotifyService.SPOTIFY_API_BASE}/me/player/devices`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      const devices = devicesResponse.data.devices;
+      const hasActiveDevice = devices.some((d: any) => d.is_active);
+      
+      if (!hasActiveDevice) {
+        // No active device, open Spotify
+        await vscode.env.openExternal(vscode.Uri.parse('spotify:'));
+        return;
+      }
+
       await axios.post(`${SpotifyService.SPOTIFY_API_BASE}/me/player/previous`, {}, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
